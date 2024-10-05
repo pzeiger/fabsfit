@@ -7,7 +7,20 @@ This script downloads
 import requests
 import argparse
 
-def download_data():
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+                        prog='fetchparams',
+                        description='Download Parametrization data from abTEM',)
+    parser.add_argument('path',
+                        nargs='?',
+                        default='pengfit/data',
+                        help='Specify the directory in which to download the data.')
+    
+    return parser.parse_args() 
+
+
+def download_data(args):
     files = ('kirkland.json',
              'lobato.json',
              'peng_high.json',
@@ -22,13 +35,13 @@ def download_data():
             print(r.headers.keys())
             print(r.__dict__.keys())
             print(r._content)
-            ofile = f'../pengfit/data/{file}'
+            ofile = f'{args.path}/{file}'
             with open(ofile,'w') as f:
                 f.write(r.text)
                 f.write('\n')
 
 
-if __name__ == __main__:
-    download_data()
+if __name__ == '__main__':
+    download_data(parse_args())
 
 
