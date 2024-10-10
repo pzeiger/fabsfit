@@ -20,6 +20,21 @@ def parse_args():
                         nargs='?',
                         default='H',
                         help='Element abbreviation.')
+    parser.add_argument('-e',
+                        '--elparam',
+                        default='peng',
+                        nargs='1',
+                        help='Which parametrisation to use for the absorptive scattering factor')
+    parser.add_argument('-a',
+                        '--absparam',
+                        default='peng',
+                        nargs='1',
+                        help='Which parametrisation to use for the absorptive scattering factor')
+    parser.add_argument('-d',
+                        '--datafile',
+                        nargs='1',
+                        default='peng_high.json',
+                        help='Filename of the elastic scattering factor parameter data.')
     parser.add_argument('-B', 
                         '--Biso',
                         default=0.0001,
@@ -28,16 +43,17 @@ def parse_args():
     return parser.parse_args()
 
 
-
 def main():
     """
     """
+    
     args = parse_args()
+    
+    Parametrization()
     
     print(args)
     
     fabsfit.peng.Parametrization(args.element, args.Ekin)
-
 
 
 if __name__ == '__main__':
