@@ -3,6 +3,8 @@
 import sys
 import argparse
 import fabsfit
+from fabsfit.plot import plot_fit
+from fabsfit.parametrization import Parametrization
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -37,8 +39,13 @@ def parse_args():
                         help='Filename of the elastic scattering factor parameter data.')
     parser.add_argument('-B', 
                         '--Biso',
-                        default=0.0001,
+                        default=0.1,
                         help='Isotropic Debye-Waller factor exponent in Å**2.')
+    
+    parser.add_argument('-B', 
+                        '--maxfev',
+                        default=10000,
+                        help='Maximum number of evaluations of fitting function. Try to increase if fit does not converge.')
     
     return parser.parse_args()
 
@@ -48,12 +55,15 @@ def main():
     """
     
     args = parse_args()
-    
-    Parametrization()
-    
     print(args)
     
-    fabsfit.peng.Parametrization(args.element, args.Ekin)
+    param = Parametrization(args.element, args.Ekin)
+    
+    popt, pcov, infodict, mesg, ier, R2, R2_adj = param.fit()
+    
+    fig, ax = plot_fit()
+    
+    fig.savefig('fabsfit_{args.element}.pdf', dpi=300)
 
 
 if __name__ == '__main__':
