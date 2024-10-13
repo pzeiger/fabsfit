@@ -162,4 +162,4 @@ cython_debug/
 #.idea/
 
 # parametrization data files
-fabsfit/data/
+src/fabsfit/data/*.json

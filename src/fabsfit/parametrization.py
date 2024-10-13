@@ -4,14 +4,11 @@ from scipy.optimize import curve_fit
 from scipy.integrate import dblquad
 from fabsfit.constants import hbarc, mec2
 from periodictable import elements
-from .miscfcns import get_current_function_name
+from fabsfit.miscfcns import get_current_function_name
 import multiprocessing as mp
 import importlib
 from numba import njit
-from itertools import repeat
 from inspect import signature
-import scipy.stats as stats
-from .plot import plot_fit
 
 
 # asymptotic scattering factor constant
