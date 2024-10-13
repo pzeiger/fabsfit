@@ -1,11 +1,9 @@
 import numpy as np
 from numba import njit
-from importlib import resources as impresources
-from . import data
-from functools import partial
+from fabsfit.data import datafiles
 
 
-default_datafile = impresources.files(data) / 'peng_high.json'
+default_datafile = datafiles['peng_high']
 
 
 def elastic_scattering_factor(p: np.ndarray):
