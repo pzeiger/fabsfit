@@ -1,18 +1,16 @@
 import json
 import numpy as np
 from scipy.optimize import curve_fit
-from scipy.integrate import dblquad
+from scipy.integrate import nquad
 from fabsfit.constants import hbarc, mec2
 from periodictable import elements
-from fabsfit.miscfcns import get_current_function_name
+import fabsfit.miscfcns as miscfcns
 import multiprocessing as mp
 import importlib
 from numba import njit
-from inspect import signature
 import io
 from contextlib import redirect_stdout, redirect_stderr
-import IPython
-
+import sys
 
 
 # asymptotic scattering factor constant
@@ -63,8 +61,9 @@ def _integrate_absorptive_scattering_factor(integrand, s: np.ndarray, k0):
     
     with redirect_stdout(out), redirect_stderr(err):
         print(f'Value of s: {s}')
-        fabs, fabs_err = dblquad(integrand, .0, 2.*k0, 
-                                 .0, 2.*np.pi, args=(s,))
+        ab = [(.0, 2.*np.pi), (.0, np.inf)]
+        fabs, fabs_err = nquad(integrand, ab, args=(s,),
+                               opts={'limit': 1000})
     
     return fabs, fabs_err, out.getvalue(), err.getvalue()
 
@@ -109,42 +108,54 @@ class Parametrization():
         if self.debug:
             self.check_asymptotic_scattering_factor()
         
-        self._set_elastic_scattering_factor_fit()
+        self._set_scattering_factor_absfit()
         self._set_elastic_scattering_factor_extended()
         self._set_absorptive_scattering_factor_integrand()
+        
+        self.smin_fit = .0
+        self.smax_fit = 6.
+        self.ns = 121
     
     
     def fit(self):
-        s = np.linspace(.0, 6., 61)
+        s = np.linspace(self.smin_fit, self.smax_fit, self.ns)
         
         fabs, fabs_err, comments = self.absorptive_scattering_factor(s)
         
-        IPython.embed()
-        
-        # 
+        # multiply by DWF
         fabs_dwf = fabs * np.exp(-.5 * self.Biso * s**2)
         
-        print(comments.size)
+        if self.debug:
+            print(s.shape)
+            print(fabs.shape)
+            print(fabs_err.shape)
+            print(comments.shape)
+        
+        self.fitdata = np.array([s, fabs, fabs_err, fabs_dwf, comments]).T
         
         header = 'columns: s    fabs    fabs_err    ' + \
             'fabs*exp(-.5*Biso*s**2)    comment'
-        np.savetxt(f'data_fabs_{self.element}.txt',
-                   np.array([s, fabs, fabs_err, fabs_dwf, comments]).T,
+        
+        np.savetxt(f'data_fabs_{self.save_str()}.txt',
+                   self.fitdata,
                    fmt='      %.3f %.10e %.10e %.10e %s',
                    header=header)
-        
-        sig = signature(self.elastic_scattering_factor_fit)
-        params = sig.parameters
-        nparams = len(params) - 1
         
         if self.debug or self.verbose:
             print('******************************************************')
             print('Starting fit of absorptive scattering factor ...')
         
+        bounds = np.zeros((2, self.nparams_absfit))
+        bounds[0,:] = np.inf
+        bounds[1,:5] = -np.inf
+        
+        if self.debug:
+            print(bounds)
+        
         popt, pcov, infodict, mesg, ier = curve_fit(
-            self.elastic_scattering_factor_fit,
+            self._scattering_factor_absfit,
             s, fabs_dwf,
-            p0=[.5 for i in range(nparams)],
+            p0=[np.random.uniform() for i in range(self.nparams_absfit)],
             maxfev=20000,
             full_output=True,
         )
@@ -163,7 +174,7 @@ class Parametrization():
         RSS = np.sum((fabs_dwf - fabs_model)**2)
         TSS = np.sum((fabs_dwf - fabs_dwf.mean())**2)
         R2 = 1 - RSS/TSS
-        R2_adj = 1 - (RSS * (s.size-1)) / (TSS * (s.size-nparams))
+        R2_adj = 1 - (RSS * (s.size-1)) / (TSS * (s.size-self.nparams_absfit))
         
         return popt, pcov, infodict, mesg, ier, R2, R2_adj
         
@@ -209,21 +220,30 @@ class Parametrization():
         return df
     
     
+    def save_str(self):
+        return f'{self.element}_Biso{self.Biso}_Ekin{self.Ekin}'
+    
+    
     def _process_integration_warnings(self, stdout, stderr):
         comments = []
         
         for o, e in zip(stdout, stderr):
+            if o[:11] != 'Value of s:':
+                print(o)
             if e == '':
                 comments.append('')
             elif 'IntegrationWarning' in e and 'roundoff error' in e:
                 comments.append('roundoff error occurred, ' + \
                                'fab_err may be underestimated')
+            else:
+                print(e)
+                sys.exit()
         return np.array(comments, dtype=object)
     
     
     def _set_elastic_scattering_factor(self):
         self.elastic_scattering_factor = \
-            self.elparam.elastic_scattering_factor(self.p)
+            self.elparam.elastic_scattering_factor_wrapper(self.p)
     
     
     def _set_asymptotic_scattering_factor(self):
@@ -232,9 +252,13 @@ class Parametrization():
             _asymptotic_scattering_factor(self.alpha, self.Z)
     
     
-    def _set_elastic_scattering_factor_fit(self):
-        self.elastic_scattering_factor_fit = \
+    def _set_scattering_factor_absfit(self):
+        self._scattering_factor_absfit = \
             self.elparam.elastic_scattering_factor_fit
+        self.nparams_absfit = miscfcns.get_number_params(
+            self._scattering_factor_absfit)
+        x = miscfcns.get_list_func_args(self._scattering_factor_absfit)
+        self.list_params_absfit = x[1:]
     
     
     def _set_elastic_scattering_factor_extended(self):
@@ -254,7 +278,7 @@ class Parametrization():
     
     def _set_fitted_absorptive_scattering_factor(self, p):
         self.fitted_absorptive_scattering_factor = \
-            self.elparam.elastic_scattering_factor(p=p)
+            self.elparam.elastic_scattering_factor_wrapper(p=p)
     
     
     def _load_params_elastic_scattering_factor(self):
@@ -280,7 +304,7 @@ class Parametrization():
     
     def _get_datafile(self):
         raise NotImplementedError(
-                  'Method %s not implemented.' % get_current_function_name())
+                  f'Method {miscfcns.get_current_function_name()} not implemented.')
     
     
     def _v_over_c(self):

@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-from fabsfit.plot import plot_fit
 from fabsfit.cui.download import download_abtem
 from fabsfit.cui.fit import fit_absorptive_scattering_factor
 import argparse
@@ -70,13 +69,13 @@ def parse_args():
     parser_fit.add_argument(
         '-e',
         '--elparam',
-        default='peng',
+        default='doyleturner',
         help='Which parametrisation to use for the absorptive scattering factor')
     
     parser_fit.add_argument(
         '-a',
         '--absparam',
-        default='peng',
+        default='doyleturner',
         help='Which parametrisation to use for the absorptive scattering factor')
     
     parser_fit.add_argument(
@@ -93,10 +92,10 @@ def parse_args():
         help='Maximum number of evaluations of fitting function. Try to increase if fit does not converge.')
     
     parser_fit.add_argument(
-        '-d',
-        '--download',
+        '-s',
+        '--showplot',
         action='store_true',
-        help='Download parameter file to data dir')
+        help='Show plot at the end of the fit.')
     
     parser_fit.set_defaults(func=fit)
     
@@ -113,11 +112,9 @@ def download(args):
 
 def fit(args):
     def inner():
-        return fit_absorptive_scattering_factor(args.elparam, args.absparam,
-                                                args.element, args.Ekin,
-                                                args.Biso, 
-                                                verbose=args.verbose,
-                                                debug=args.debug)
+        return fit_absorptive_scattering_factor(
+            args.elparam, args.absparam, args.element, args.Ekin,
+            args.Biso, verbose=args.verbose, debug=args.debug)
     return inner()
 
 
