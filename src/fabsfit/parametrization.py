@@ -9,11 +9,14 @@ import multiprocessing as mp
 import importlib
 from numba import njit
 from inspect import signature
+import io
+from contextlib import redirect_stdout, redirect_stderr
+import IPython
+
 
 
 # asymptotic scattering factor constant
 _asfc = 0.023933754
-
 
 def _elastic_scattering_factor_extended(elastic_scattering_factor,
                                         asymptotic_scattering_factor,
@@ -53,12 +56,28 @@ def _asymptotic_scattering_factor(alpha: np.double, Z: np.uint8):
     return inner
 
 
+def _integrate_absorptive_scattering_factor(integrand, s: np.ndarray, k0):
+    
+    out = io.StringIO()
+    err = io.StringIO()
+    
+    with redirect_stdout(out), redirect_stderr(err):
+        print(f'Value of s: {s}')
+        fabs, fabs_err = dblquad(integrand, .0, 2.*k0, 
+                                 .0, 2.*np.pi, args=(s,))
+    
+    return fabs, fabs_err, out.getvalue(), err.getvalue()
+
+
+
 class Parametrization():
 
     def __init__(self, elparam: str, absparam: str, element: str,
-                 Ekin: float, Biso: float, datafile: str = '', debug=False):
+                 Ekin: float, Biso: float, datafile: str = '', 
+                 verbose=False, debug=False):
         
         self.debug = debug
+        self.verbose = verbose
         
         self.elparam = importlib.import_module('.'+elparam,
                                                package='fabsfit')
@@ -97,17 +116,30 @@ class Parametrization():
     
     def fit(self):
         s = np.linspace(.0, 6., 61)
-        fabs, fabserr = self.absorptive_scattering_factor(s)
+        
+        fabs, fabs_err, comments = self.absorptive_scattering_factor(s)
+        
+        IPython.embed()
         
         # 
         fabs_dwf = fabs * np.exp(-.5 * self.Biso * s**2)
         
-        np.savetxt(f'data_fabs_{self.element}.txt', 
-                   np.array([s, fabs, fabs_dwf, fabserr]).T)
+        print(comments.size)
+        
+        header = 'columns: s    fabs    fabs_err    ' + \
+            'fabs*exp(-.5*Biso*s**2)    comment'
+        np.savetxt(f'data_fabs_{self.element}.txt',
+                   np.array([s, fabs, fabs_err, fabs_dwf, comments]).T,
+                   fmt='      %.3f %.10e %.10e %.10e %s',
+                   header=header)
         
         sig = signature(self.elastic_scattering_factor_fit)
         params = sig.parameters
         nparams = len(params) - 1
+        
+        if self.debug or self.verbose:
+            print('******************************************************')
+            print('Starting fit of absorptive scattering factor ...')
         
         popt, pcov, infodict, mesg, ier = curve_fit(
             self.elastic_scattering_factor_fit,
@@ -116,8 +148,14 @@ class Parametrization():
             maxfev=20000,
             full_output=True,
         )
-        print(popt)
-        print(pcov)
+        
+        if self.debug or self.verbose:
+            print('Done!')
+            print('******************************************************')
+        
+        if self.debug:
+            print(popt)
+            print(pcov)
         
         self._set_fitted_absorptive_scattering_factor(popt.reshape((2,-1)))
         
@@ -129,36 +167,58 @@ class Parametrization():
         
         return popt, pcov, infodict, mesg, ier, R2, R2_adj
         
-    
-    
+
     def absorptive_scattering_factor(self, s: np.ndarray):
-        args = [(
-             self.absorptive_scattering_factor_integrand, 
-             .0, 2.*np.inf, #self._k0(),
-             .0, 2.*np.pi,
-             (np.array([x,]),),
-             ) for x in s]
-        
+        args = [(self.absorptive_scattering_factor_integrand, 
+                 np.array([x,]), self._k0()) for x in s]
+                
         # for arg in args:
         #     print(arg)
         #     dblquad(*arg)
         
-        if self.debug:
+        if self.debug or self.verbose:
             print('******************************************************')
-            print('Starting integration of absorptive scattering factor')
+            print('Starting integration of absorptive scattering factor ...')
+        
+        if self.debug:
             print(args)
         
         # Integrate absorptive scattering factor
         with mp.Pool(8) as pool:
-            tmp = pool.starmap(dblquad, args)
+            tmp = pool.starmap(_integrate_absorptive_scattering_factor, args)
             
-        if self.debug:
+        if self.debug or self.verbose:
+            print('Done!')
             print('******************************************************')
         
         fabs = np.array([x[0] for x in tmp]) * self._conversion_factor()
-        err = np.array([x[1] for x in tmp]) * self._conversion_factor()
+        fabs_err = np.array([x[1] for x in tmp]) * self._conversion_factor()
+        stdout = [x[2] for x in tmp]
+        stderr = [x[3] for x in tmp]
         
-        return fabs, err
+        comments = self._process_integration_warnings(stdout, stderr)
+        
+        return fabs, fabs_err, comments
+    
+    
+    def check_asymptotic_scattering_factor(self):
+        df = np.abs(self.elastic_scattering_factor(self.smax) - \
+                    self.asymptotic_scattering_factor(self.smax))
+        print('Found alpha = % 2.8e with a mismatch of df = % 2.8e' \
+              % (self.alpha, df))
+        return df
+    
+    
+    def _process_integration_warnings(self, stdout, stderr):
+        comments = []
+        
+        for o, e in zip(stdout, stderr):
+            if e == '':
+                comments.append('')
+            elif 'IntegrationWarning' in e and 'roundoff error' in e:
+                comments.append('roundoff error occurred, ' + \
+                               'fab_err may be underestimated')
+        return np.array(comments, dtype=object)
     
     
     def _set_elastic_scattering_factor(self):
@@ -237,14 +297,4 @@ class Parametrization():
     
     def _lorentz_factor(self):
         return 1. / np.sqrt(1. - self._v_over_c()**2)
-    
-    
-    def check_asymptotic_scattering_factor(self):
-        df = np.abs(self.elastic_scattering_factor(self.smax) - \
-                    self.asymptotic_scattering_factor(self.smax))
-        print('Found alpha = % 2.8e with a mismatch of df = % 2.8e' \
-              % (self.alpha, df))
-        return df
-    
-    
     
