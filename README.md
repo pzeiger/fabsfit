@@ -1,6 +1,12 @@
 # fabsfit
 A small program to fit a parametrization of the the absorptive scattering factor.
 
+
+## Credits
+
+The workflow of this code was designed by [Dr. José Ángel Castellanos-Reyes](https://www.uu.se/en/contact-and-organisation/staff?query=N22-1026). We acknowledge the [abTEM](https://github.com/abTEM/abTEM) multislice code for the compilation of parametrization data of elastic scattering factors.
+
+
 ## Installation
 
 The installation can be performed using pip:
@@ -11,7 +17,7 @@ $ pip install fabsfit
 
 ### Elastic Parametrization Data Download
 
-We use the parametrization data of [abTEM](https://github.com/abTEM/abTEM). To download the files to the fabsfit data directory, run
+We use the parametrization data of [abTEM](https://github.com/abTEM/abTEM/tree/main/abtem/parametrizations/data). To download the files to the fabsfit data directory, run
 ```
 $ fabsfit download
 ```
