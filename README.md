@@ -1,5 +1,5 @@
 # fabsfit
-A small program to fit a parametrization of the the absorptive scattering factor.
+A small Python package and script to fit a parametrization of the absorptive scattering factor due to phonons.
 
 
 ## Credits
